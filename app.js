@@ -1,30 +1,16 @@
-// ==========================================
-// CONFIGURACIÓN DIRECTA DE GOOGLE WORKSPACE
-// ==========================================
-// IDs extraídos de los enlaces provistos por el usuario
-const SPREADSHEET_ID = "1ZkZia8ubyKpKZyElHld6Eq6yYKzkLsf2wUdduX37jwE";
-const CARPETA_DRIVE_ID = "1E7Qs2_n2-EQReFIJnSB2cS3OFxIZA9_K";
+// ==========================
+// CONFIGURACIÓN
+// ==========================
+const API_URL = "https://script.google.com/macros/s/AKfycby2F3b0oKcvDGGvfs-6pJGS5kbQwoFbtitifW99nCproWSsIuB99mKfRrHXjGU1GBXQHg/exec";
 
-// ==========================================
-// ESTADO LOCAL DE LA APLICACIÓN
-// ==========================================
+// ==========================
+// ESTADO
+// ==========================
 let lastImageData = null;
 let lastOriginalFile = null;
 let isSubmitting = false;
 
 window.addEventListener("load", () => {
-  // Simulación de base de datos local de choferes para la validación inicial (ID -> Nombre)
-  // Nota: Al no usar Apps Script, validamos localmente o mediante Sheets API leyendo una pestaña de usuarios.
-  if (!localStorage.getItem("choferes_db")) {
-    const choferesIniciales = {
-      "C1": "Juan Pérez",
-      "C2": "Carlos Rodríguez",
-      "C3": "Marcos Gómez",
-      "PABLO": "Pablo Vergara"
-    };
-    localStorage.setItem("choferes_db", JSON.stringify(choferesIniciales));
-  }
-
   const id = localStorage.getItem("chofer_id");
   const nombre = localStorage.getItem("chofer_nombre");
   if (id && nombre) {
@@ -34,29 +20,14 @@ window.addEventListener("load", () => {
   }
 });
 
-// ==========================================
-// GESTIÓN DE CREDENCIALES (OAUTH2 TOKEN)
-// ==========================================
-async function obtenerAccessTokenSeguro() {
-  /**
-   * IMPORTANTE SEGURO:
-   * Para interactuar con las APIs de Google de forma directa, se requiere un Token de acceso Bearer.
-   * Debes obtener este token mediante Google Identity Services (OAuth2) pidiendo permiso al chofer,
-   * o recuperándolo desde un backend propio extremadamente ligero que no exponga tus claves maestras.
-   * * Reemplaza el string de abajo con tu mecanismo de obtención de Token dinámico.
-   */
-  const tokenProvisorio = "TU_TOKEN_OAUTH2_ACTUAL_DE_GOOGLE"; 
-  return tokenProvisorio;
-}
-
-// ==========================================
-// INTERFAZ DE USUARIO (UI)
-// ==========================================
+// ==========================
+// UI
+// ==========================
 function mostrarLogin() {
   document.getElementById("mainCard").innerHTML = `
     <h1>Identificación</h1>
     <label>ID Chofer</label>
-    <input id="idInput" type="text" style="text-transform:uppercase" placeholder="Ej: C1 o PABLO">
+    <input id="idInput" type="text" style="text-transform:uppercase" placeholder="Ej: C1">
     <button class="btn" id="loginBtn" type="button">Ingresar</button>
     <div id="msg"></div>
   `;
@@ -109,7 +80,7 @@ function mostrarFormulario(nombre) {
       <textarea id="observaciones" placeholder="Escribe aquí cualquier comentario"></textarea>
     </div>
 
-    <button id="sendBtn" class="btn" type="button">Subir a Google Directo</button>
+    <button id="sendBtn" class="btn" type="button">Subir y Guardar</button>
     <div id="msg"></div>
 
     <center>
@@ -120,8 +91,13 @@ function mostrarFormulario(nombre) {
   const hoy = new Date();
   document.getElementById("fechaTransferencia").value = hoy.toISOString().split("T")[0];
 
-  document.getElementById("btnGaleria").addEventListener("click", () => document.getElementById("fileGaleria").click());
-  document.getElementById("btnCamara").addEventListener("click", () => document.getElementById("fileCamara").click());
+  document.getElementById("btnGaleria").addEventListener("click", () => {
+    document.getElementById("fileGaleria").click();
+  });
+
+  document.getElementById("btnCamara").addEventListener("click", () => {
+    document.getElementById("fileCamara").click();
+  });
 
   document.getElementById("fileGaleria").addEventListener("change", previewFile);
   document.getElementById("fileCamara").addEventListener("change", previewFile);
@@ -131,7 +107,7 @@ function mostrarFormulario(nombre) {
 
 function setMessage(type, text, extraHtml = "") {
   const msg = document.getElementById("msg");
-  if (msg) msg.innerHTML = `<div class="${type}">${text}${extraHtml}</div>`;
+  msg.innerHTML = `<div class="${type}">${text}${extraHtml}</div>`;
 }
 
 function escapeHtml(text) {
@@ -143,7 +119,10 @@ function escapeHtml(text) {
     .replaceAll("'", "&#039;");
 }
 
-function entrar() {
+// ==========================
+// LOGIN / VALIDACIÓN (Tu lógica original por API)
+// ==========================
+async function entrar() {
   const input = document.getElementById("idInput");
   const btn = document.getElementById("loginBtn");
   const id = input.value.trim().toUpperCase();
@@ -154,16 +133,23 @@ function entrar() {
   }
 
   btn.disabled = true;
-  setMessage("ok", "⏳ Validando Chofer...");
+  setMessage("ok", "⏳ Validando...");
 
-  const db = JSON.parse(localStorage.getItem("choferes_db"));
-  
-  if (db && db[id]) {
-    localStorage.setItem("chofer_id", id);
-    localStorage.setItem("chofer_nombre", db[id]);
-    mostrarFormulario(db[id]);
-  } else {
-    setMessage("err", "❌ ID de chofer no válido en el sistema local");
+  try {
+    const url = `${API_URL}?action=validateChofer&id=${encodeURIComponent(id)}`;
+    const res = await fetch(url, { method: "GET" });
+    const data = await res.json();
+
+    if (data.success) {
+      localStorage.setItem("chofer_id", data.id);
+      localStorage.setItem("chofer_nombre", data.nombre); // Guarda el nombre real (Ej: "Diego Guzman")
+      mostrarFormulario(data.nombre);
+    } else {
+      setMessage("err", `❌ ${escapeHtml(data.error || "ID no válido")}`);
+      btn.disabled = false;
+    }
+  } catch (err) {
+    setMessage("err", `❌ Error de conexión: ${escapeHtml(String(err))}`);
     btn.disabled = false;
   }
 }
@@ -177,26 +163,27 @@ function logout() {
   mostrarLogin();
 }
 
-// ==========================================
-// MANEJO Y COMPRESIÓN DE IMÁGENES LOCAL
-// ==========================================
+// ==========================
+// IMAGEN Y COMPRESIÓN LOCAL
+// ==========================
 function previewFile(e) {
   const input = e.target;
-  if (!input.files || input.files.length === 0) return; // Evita limpiar si se cancela la captura
+  if (!input.files || input.files.length === 0) return; // Evita limpiar si cancelan la captura en el celu
 
   const file = input.files[0];
   const fotoStatus = document.getElementById("fotoStatus");
   const previewImg = document.getElementById("previewImg");
 
   lastOriginalFile = file;
+
   const reader = new FileReader();
 
   reader.onload = (ev) => {
     lastImageData = ev.target.result;
     previewImg.src = ev.target.result;
     previewImg.classList.remove("hidden");
-    fotoStatus.textContent = `Imagen lista: ${file.name || "foto.jpg"}`;
-    setMessage("ok", "✅ Imagen procesada y lista");
+    fotoStatus.textContent = `Imagen lista: ${file.name || "foto"}`;
+    setMessage("ok", "✅ Imagen lista para subir");
   };
 
   reader.onerror = () => {
@@ -204,8 +191,8 @@ function previewFile(e) {
     lastOriginalFile = null;
     previewImg.src = "";
     previewImg.classList.add("hidden");
-    fotoStatus.textContent = "Error al leer la imagen";
-    setMessage("err", "❌ No se pudo procesar el archivo");
+    fotoStatus.textContent = "No se pudo leer la imagen";
+    setMessage("err", "❌ Error al leer la imagen");
   };
 
   reader.readAsDataURL(file);
@@ -213,12 +200,14 @@ function previewFile(e) {
 
 function descargarCopia() {
   if (!lastOriginalFile) {
-    setMessage("err", "❌ No hay foto original para descargar");
+    setMessage("err", "❌ No hay una foto original disponible para descargar");
     return;
   }
+
   const url = URL.createObjectURL(lastOriginalFile);
   const link = document.createElement("a");
   link.href = url;
+
   let ext = "jpg";
   if (lastOriginalFile.type === "image/png") ext = "png";
   if (lastOriginalFile.type === "image/webp") ext = "webp";
@@ -227,18 +216,23 @@ function descargarCopia() {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function comprimirImagenABlob(file) {
+// Comprime la imagen usando Canvas y devuelve un DataURL en Base64
+async function comprimirImagenABase64(file) {
   return new Promise((resolve, reject) => {
-    if (!file) return resolve(null);
+    if (!file) {
+      resolve("");
+      return;
+    }
 
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Error de lectura"));
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
     reader.onload = (e) => {
       const img = new Image();
-      img.onerror = () => reject(new Error("Error al cargar objeto imagen"));
+      img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
       img.onload = () => {
         const MAX_WIDTH = 1280;
         const scale = Math.min(1, MAX_WIDTH / img.width);
@@ -250,10 +244,9 @@ async function comprimirImagenABlob(file) {
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        canvas.toBlob((blob) => {
-          if (!blob) return reject(new Error("Fallo en compresión Canvas"));
-          resolve(blob);
-        }, "image/jpeg", 0.72);
+        // Extrae directamente el string Base64 con calidad optimizada
+        const base64Data = canvas.toDataURL("image/jpeg", 0.72);
+        resolve(base64Data);
       };
       img.src = e.target.result;
     };
@@ -261,131 +254,9 @@ async function comprimirImagenABlob(file) {
   });
 }
 
-// ==========================================
-// INTEGRACIÓN NATIVA CON GOOGLE DRIVE API v3
-// ==========================================
-async function subirImagenAGoogleDrive(fileBlob, choferId, token) {
-  if (!fileBlob) return "";
-
-  const metadata = {
-    name: `registro_${choferId}_${Date.now()}.jpg`,
-    parents: [CARPETA_DRIVE_ID],
-    mimeType: "image/jpeg"
-  };
-
-  const formData = new FormData();
-  formData.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
-  formData.append("file", fileBlob);
-
-  // Endpoint Multipart para subidas de archivos con metadatos asociados
-  const url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink";
-  
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Drive API Error: ${errText}`);
-  }
-
-  const data = await res.json();
-  
-  // Opcional: Hacer que el archivo sea visible para cualquiera con el enlace de forma explícita
-  try {
-    await fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ role: "reader", type: "anyone" })
-    });
-  } catch (e) {
-    console.warn("No se pudieron cambiar los permisos del archivo de forma pública, pero se subió correctamente.");
-  }
-
-  return data.webViewLink || `https://drive.google.com/open?id=${data.id}`;
-}
-
-// ==========================================
-// INTEGRACIÓN CON GOOGLE SHEETS API v4 (Pestañas Dinámicas)
-// ==========================================
-async function asegurarPestañaYGuardarDatos(sheetTitle, filaDatos, token) {
-  // 1. Obtener los metadatos de las hojas actuales en el documento para verificar si la pestaña ya existe
-  const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`;
-  const metaRes = await fetch(metaUrl, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  
-  if (!metaRes.ok) throw new Error("No se pudo leer la estructura del Google Sheet.");
-  const spreadsheetData = await metaRes.json();
-  
-  const pestañaExiste = spreadsheetData.sheets.some(s => s.properties.title.toUpperCase() === sheetTitle.toUpperCase());
-
-  // 2. Si la pestaña no existe, se crea dinámicamente agregando una nueva y seteando la fila de cabecera
-  if (!pestañaExiste) {
-    setMessage("ok", `⏳ Creando pestaña nueva para el chofer: "${sheetTitle}"...`);
-    
-    const batchUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`;
-    const addSheetRequest = {
-      requests: [{
-        addSheet: {
-          properties: { title: sheetTitle }
-        }
-      }]
-    };
-
-    const addRes = await fetch(batchUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(addSheetRequest)
-    });
-
-    if (!addRes.ok) throw new Error(`Error al crear la pestaña del chofer: ${sheetTitle}`);
-
-    // Insertar fila de cabecera estructural por primera vez en la hoja nueva
-    const headerRange = `${sheetTitle}!A1:F1`;
-    const headerValues = [["Fecha Registro", "ID Chofer", "Código Cliente", "Nro Camión", "Observaciones", "Enlace Foto Drive"]];
-    
-    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${headerRange}?valueInputOption=USER_ENTERED`, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ values: headerValues })
-    });
-  }
-
-  // 3. Hacer el Append nativo de los datos en la pestaña específica del chofer
-  setMessage("ok", `⏳ Escribiendo datos en la pestaña "${sheetTitle}"...`);
-  const appendRange = `${sheetTitle}!A:F`;
-  const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${appendRange}:append?valueInputOption=USER_ENTERED`;
-
-  const appendRes = await fetch(appendUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ values: [filaDatos] })
-  });
-
-  if (!appendRes.ok) {
-    const errText = await appendRes.text();
-    throw new Error(`Sheets API Append Error: ${errText}`);
-  }
-}
-
-// ==========================================
-// PROCESAMIENTO Y ENVÍO DEL FORMULARIO
-// ==========================================
+// ==========================
+// ENVÍO DEL FORMULARIO
+// ==========================
 async function submit() {
   if (isSubmitting) return;
 
@@ -406,56 +277,55 @@ async function submit() {
 
   isSubmitting = true;
   btn.disabled = true;
-  setMessage("ok", "⏳ Autenticando con Google Services...");
+  setMessage("ok", "⏳ Procesando...");
 
   try {
-    // Obtenemos el token OAuth2 necesario para las peticiones REST directas
-    const token = await obtenerAccessTokenSeguro();
-    if (!token || token.includes("TU_TOKEN")) {
-      throw new Error("Configuración de autenticación inválida o falta configurar el Token OAuth2.");
-    }
-
-    let urlImagenDrive = "Sin foto asignada";
+    let imagenBase64 = "";
 
     if (file) {
-      setMessage("ok", "⏳ Comprimiendo imagen en dispositivo...");
-      const archivoComprimido = await comprimirImagenABlob(file);
-      
-      setMessage("ok", "⏳ Subiendo archivo directo a Carpeta de Google Drive...");
-      const choferId = localStorage.getItem("chofer_id");
-      urlImagenDrive = await subirImagenAGoogleDrive(archivoComprimido, choferId, token);
+      setMessage("ok", "⏳ Procesando imagen...");
+      imagenBase64 = await comprimirImagenABase64(file);
     }
 
-    // Armamos la estructura exacta que se va a guardar en las columnas del Google Sheet
-    const choferNombre = localStorage.getItem("chofer_nombre");
-    const choferId = localStorage.getItem("chofer_id");
-    
-    const filaDatos = [
-      fechaTransferencia,
-      choferId,
+    setMessage("ok", "⏳ Guardando registro en Google...");
+
+    // Armamos el payload incluyendo el nombre del chofer para la separación de pestañas
+    const payload = {
+      choferId: localStorage.getItem("chofer_id"),
+      choferNombre: localStorage.getItem("chofer_nombre"), // Envía "Diego Guzman", "Pablo Vergara", etc.
       codigoCliente,
-      nroCamion,
+      field: nroCamion,
+      fechaTransferencia,
       observaciones,
-      urlImagenDrive
-    ];
+      imagenBase64: imagenBase64 // Reemplaza por completo el flujo de Cloudinary
+    };
 
-    // Llamamos a la lógica encargada de buscar/crear la pestaña y guardar los datos
-    // Usamos el nombre del chofer (ej: "Juan Pérez") como título para separar sus pestañas
-    await asegurarPestañaYGuardarDatos(choferNombre, filaDatos, token);
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify(payload)
+    });
 
-    // Mensaje de éxito con opción de recuperar copia de seguridad local de la foto
+    const data = await res.json();
+
+    if (!data.success) {
+      throw new Error(data.error || "No se pudo guardar el registro");
+    }
+
     const extraHtml = lastImageData
       ? `<br><button class="btn-download" type="button" id="downloadBtn">⬇️ Descargar foto original</button>`
       : "";
 
-    setMessage("ok", "✅ ¡Guardado directamente en Google Sheets y Drive con éxito!", extraHtml);
+    setMessage("ok", "✅ ¡Guardado correctamente!", extraHtml);
 
     const downloadBtn = document.getElementById("downloadBtn");
     if (downloadBtn) {
       downloadBtn.addEventListener("click", descargarCopia);
     }
 
-    // Reset completo del formulario
+    // Limpieza de campos de entrada
     document.getElementById("codigoCliente").value = "";
     document.getElementById("field").value = "";
     document.getElementById("observaciones").value = "";
@@ -467,11 +337,11 @@ async function submit() {
 
     const hoy = new Date();
     document.getElementById("fechaTransferencia").value = hoy.toISOString().split("T")[0];
-    
+
     lastOriginalFile = file;
 
   } catch (err) {
-    setMessage("err", `❌ Error en el proceso: ${escapeHtml(String(err.message || err))}`);
+    setMessage("err", `❌ ${escapeHtml(String(err.message || err))}`);
   } finally {
     isSubmitting = false;
     btn.disabled = false;
